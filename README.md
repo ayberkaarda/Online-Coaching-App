@@ -39,7 +39,6 @@ Platform, yüksek performans, modern web standartları ve ölçeklenebilir altya
 * Supabase Hesabı
 * Node.js & npm
 
-### 2. Laravel & React Kurulumu
 
 Projeyi klonlayın ve kök dizine gidin:
 ```bash
