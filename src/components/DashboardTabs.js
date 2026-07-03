@@ -4,16 +4,78 @@ import { useState, useEffect, useRef } from "react";
 import html2canvas from "html2canvas";
 import { supabase } from "@/lib/supabase";
 
+// Güvenli CSV İndirme Fonksiyonu
+const downloadCSV = (data, filename, isText = false) => {
+  if (!data || data.length === 0) {
+    alert("İndirilecek veri bulunamadı.");
+    return;
+  }
+
+  let csvContent = "\uFEFF";
+
+  if (isText) {
+    const formattedText = `"${String(data).replace(/"/g, '""')}"`;
+    csvContent += "Program Detayı\n" + formattedText;
+  } else {
+    const headers = Object.keys(data[0]).join(",");
+    const rows = data.map(obj => 
+      Object.values(obj).map(value => `"${value}"`).join(",")
+    ).join("\n");
+    csvContent += headers + "\n" + rows;
+  }
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${filename}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
 export function DashboardTabs({ currentUserId, userRole, students }) {
   const [activeTab, setActiveTab] = useState('formCheck');
   const exportRef = useRef(null);
 
-  // Admin Kontrolü
-  const [selectedStudentId, setSelectedStudentId] = useState('');
-  
+  // Avatar, Arama ve Çoklu Seçim State'leri
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [currentPage, setCurrentPage] = useState(0);
+  const ITEMS_PER_PAGE = 5;
+
+  // Arama filtresi
+  const studentsList = students?.filter(s => s.role !== 'admin') || [];
+  const filteredStudents = studentsList.filter(s => 
+    s.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const totalPages = Math.ceil(filteredStudents.length / ITEMS_PER_PAGE);
+
+  // Slider Kontrolleri
+  const nextBtn = () => setCurrentPage(p => Math.min(totalPages - 1, p + 1));
+  const prevBtn = () => setCurrentPage(p => Math.max(0, p - 1));
+
+  // Seçim Kontrolleri
+  const toggleStudent = (id) => {
+    setSelectedStudentIds(prev => 
+      prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]
+    );
+  };
+
+  const selectAll = () => {
+    if (selectedStudentIds.length === filteredStudents.length) {
+      setSelectedStudentIds([]); 
+    } else {
+      setSelectedStudentIds(filteredStudents.map(s => s.id)); 
+    }
+  };
+
+  const targetId = userRole === 'admin' ? (selectedStudentIds.length === 1 ? selectedStudentIds[0] : null) : currentUserId;
+
   // Veriler
   const [fetchedFormChecks, setFetchedFormChecks] = useState([]);
   const [fetchedDailyLogs, setFetchedDailyLogs] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [nutritionPlan, setNutritionPlan] = useState('');
   const [workoutPlan, setWorkoutPlan] = useState('');
 
@@ -26,26 +88,33 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
   const [carb, setCarb] = useState('');
   const [fat, setFat] = useState('');
 
-  const targetId = userRole === 'admin' ? selectedStudentId : currentUserId;
-
   // Verileri Çek
   useEffect(() => {
     if (!targetId) {
-      setFetchedFormChecks([]); setFetchedDailyLogs([]); setNutritionPlan(''); setWorkoutPlan('');
+      setFetchedFormChecks([]); setFetchedDailyLogs([]); setAnnouncements([]); setNutritionPlan(''); setWorkoutPlan('');
       return;
     }
 
     const fetchData = async () => {
-      // Form & Günlük
       if (activeTab === 'formCheck') {
         const { data } = await supabase.from('form_checks').select('*').eq('student_id', targetId).order('created_at', { ascending: false });
         setFetchedFormChecks(data || []);
       } else if (activeTab === 'daily') {
         const { data } = await supabase.from('daily_logs').select('*').eq('student_id', targetId).order('log_date', { ascending: false });
         setFetchedDailyLogs(data || []);
+      } else if (activeTab === 'announcements') {
+        // Son 30 günün duyurularını çek
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { data } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('student_id', targetId)
+          .gte('created_at', thirtyDaysAgo.toISOString())
+          .order('created_at', { ascending: false });
+        setAnnouncements(data || []);
       }
       
-      // Programlar (Her tab değişiminde çekilir ki güncel kalsın)
       const { data: profileData } = await supabase.from('profiles').select('nutrition_plan, workout_plan').eq('id', targetId).single();
       if (profileData) {
         setNutritionPlan(profileData.nutrition_plan || '');
@@ -55,20 +124,30 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
     fetchData();
   }, [activeTab, targetId]);
 
-  // Program Kaydetme (Sadece Admin)
+  // Bildirim rozeti için sadece ilk yüklemede duyuru sayısını alıyoruz
+  useEffect(() => {
+    if (userRole === 'student' && currentUserId) {
+      const getInitialAnnouncements = async () => {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { data } = await supabase.from('notifications').select('id').eq('student_id', currentUserId).gte('created_at', thirtyDaysAgo.toISOString());
+        setAnnouncements(data || []);
+      };
+      getInitialAnnouncements();
+    }
+  }, [currentUserId, userRole]);
+
+
   const handleSaveProgram = async (type) => {
-    if (!selectedStudentId) return alert("Lütfen önce bir öğrenci seçin!");
-    
+    if (selectedStudentIds.length === 0) return alert("Lütfen programı atamak için en az bir öğrenci seçin!");
     const updateData = type === 'nutrition' ? { nutrition_plan: nutritionPlan } : { workout_plan: workoutPlan };
-    
-    const { error } = await supabase.from('profiles').update(updateData).eq('id', selectedStudentId);
-    if (error) alert("Hata: " + error.message);
-    else alert("Program başarıyla güncellendi!");
+    for (const sId of selectedStudentIds) {
+      await supabase.from('profiles').update(updateData).eq('id', sId);
+    }
+    alert(`Program ${selectedStudentIds.length} öğrenciye başarıyla atandı!`);
   };
 
-  // Öğrenci Form Gönderimi
   const handleFileUpload = async (e) => {
-    // ... (Önceki form yükleme kodlarının aynısı)
     e.preventDefault();
     if (!currentUserId || !weight) return alert("Kilo giriniz.");
     const file = e.target.poseImage.files[0];
@@ -98,7 +177,6 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
     }
   };
 
-  // Öğrenci Günlük Rapor Gönderimi
   const handleDailySubmit = async (e) => {
     e.preventDefault();
     await supabase.from('daily_logs').insert([{
@@ -113,34 +191,105 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
   const handleDownloadImage = async () => {
     if (!exportRef.current) return;
     const canvas = await html2canvas(exportRef.current, { backgroundColor: null, scale: 2 });
-    const link = document.createElement("a"); link.href = canvas.toDataURL("image/png"); link.download = `koçluk_${activeTab}.png`; link.click();
+    const link = document.createElement("a"); link.href = canvas.toDataURL("image/png"); link.download = `kocluk_${activeTab}.png`; link.click();
   };
 
   return (
     <div className="w-full mt-4">
       {userRole === 'admin' && (
-        <div className="mb-6 p-4 md:p-5 bg-white dark:bg-[#16161d] rounded-2xl border border-brand-purple/20 shadow-sm">
-          <label className="block text-xs font-bold text-brand-purple mb-2">ÖĞRENCİ SEÇ (PROGRAM YAZMAK VE İNCELEMEK İÇİN)</label>
-          <select onChange={(e) => setSelectedStudentId(e.target.value)} className="w-full p-3 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none focus:border-brand-purple transition-colors">
-            <option value="">-- Öğrenci Seçiniz --</option>
-            {students?.filter(s => s.role !== 'admin').map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-          </select>
+        <div className="mb-8 bg-white dark:bg-[#16161d] rounded-3xl border border-gray-200 dark:border-zinc-800 shadow-sm p-5 transition-all">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b border-gray-100 dark:border-zinc-800 pb-4">
+            <div>
+              <h3 className="text-sm font-black text-brand-purple uppercase tracking-widest">Öğrenci Yönetimi</h3>
+              <p className="text-xs text-gray-500 mt-1">Gelişmiş Arama ve Çoklu Seçim</p>
+            </div>
+            
+            {/* ARAMA KUTUSU */}
+            <div className="relative w-full md:w-64">
+              <span className="absolute inset-y-0 left-3 flex items-center text-gray-400 text-sm">🔍</span>
+              <input 
+                type="text" 
+                placeholder="Öğrenci Ara..." 
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(0); }}
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 text-sm focus:outline-none focus:border-brand-purple transition-all"
+              />
+            </div>
+
+            <div className="flex items-center gap-4 w-full md:w-auto justify-between">
+              <button onClick={selectAll} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-300 hover:bg-brand-purple hover:text-white transition-all whitespace-nowrap">
+                {selectedStudentIds.length === filteredStudents.length && filteredStudents.length > 0 ? 'SEÇİMİ TEMİZLE' : 'TÜMÜNÜ SEÇ'}
+              </button>
+              <div className="flex gap-2">
+                <button onClick={prevBtn} disabled={currentPage === 0} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-zinc-800 disabled:opacity-30 hover:bg-brand-purple hover:text-white transition-all">{'<'}</button>
+                <button onClick={nextBtn} disabled={currentPage >= totalPages - 1 || totalPages === 0} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-zinc-800 disabled:opacity-30 hover:bg-brand-purple hover:text-white transition-all">{'>'}</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Slayt Animasyonlu Avatar Alanı */}
+          <div className="overflow-hidden relative w-full h-24">
+            {filteredStudents.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-xs font-bold text-gray-400">Aramayla eşleşen öğrenci bulunamadı.</div>
+            ) : (
+              <div 
+                className="flex transition-transform duration-500 ease-out absolute left-0 top-0 h-full"
+                style={{ transform: `translateX(-${currentPage * 100}%)`, width: `${totalPages * 100}%` }}
+              >
+                {Array.from({ length: totalPages }).map((_, pageIndex) => (
+                  <div key={pageIndex} className="flex gap-4 justify-around px-2" style={{ width: `${100 / totalPages}%` }}>
+                    {filteredStudents.slice(pageIndex * ITEMS_PER_PAGE, (pageIndex + 1) * ITEMS_PER_PAGE).map(student => {
+                      const isSelected = selectedStudentIds.includes(student.id);
+                      return (
+                        <div 
+                          key={student.id} 
+                          onClick={() => toggleStudent(student.id)}
+                          className="flex flex-col items-center gap-2 cursor-pointer group w-16"
+                        >
+                          <img 
+                            src={`https://ui-avatars.com/api/?name=${student.full_name}&background=random&color=fff&bold=true`}
+                            alt={student.full_name}
+                            className={`w-14 h-14 rounded-full object-cover transition-all duration-300 shadow-sm ${isSelected ? 'ring-4 ring-brand-purple scale-110' : 'opacity-60 group-hover:scale-105 group-hover:opacity-100 grayscale hover:grayscale-0'}`}
+                          />
+                          <span className={`text-[10px] font-bold text-center w-full truncate ${isSelected ? 'text-brand-purple' : 'text-gray-500'}`}>
+                            {student.full_name.split(' ')[0]}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedStudentIds.length > 1 && (
+            <div className="mt-4 p-3 bg-brand-purple/10 border border-brand-purple/30 text-brand-purple text-xs font-bold text-center rounded-xl animate-pulse">
+              {selectedStudentIds.length} ÖĞRENCİ SEÇİLİ: Toplu Atama Modu Aktif!
+            </div>
+          )}
         </div>
       )}
 
       {/* MOBİL UYUMLU KAYDIRILABİLİR SEKMELER */}
       <div className="flex overflow-x-auto hide-scrollbar gap-6 border-b border-gray-200 dark:border-zinc-800 text-sm font-medium pb-2">
-        {['formCheck', 'daily', 'nutrition', 'workout'].map((tab) => (
+        {['announcements', 'formCheck', 'daily', 'nutrition', 'workout'].map((tab) => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
-            className={`pb-2 whitespace-nowrap transition-all relative ${activeTab === tab ? 'text-brand-purple font-bold' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+            className={`pb-2 whitespace-nowrap transition-all relative flex items-center gap-2 ${activeTab === tab ? 'text-brand-purple font-bold' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
           >
+            {tab === 'announcements' && (
+              <>
+                🔔 Duyurular 
+                {announcements.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">{announcements.length}</span>}
+              </>
+            )}
             {tab === 'formCheck' && '📸 Form Check'}
             {tab === 'daily' && '📊 Günlük Veriler'}
             {tab === 'nutrition' && '🥗 Beslenme'}
             {tab === 'workout' && '🏋️ Antrenman'}
-            {activeTab === tab && <span className="absolute bottom-[-9px] left-0 w-full h-[2px] bg-brand-purple" />}
+            {activeTab === tab && <span className="absolute bottom-[-9px] left-0 w-full h-[2px] bg-brand-purple shadow-[0_0_8px_rgba(139,92,246,0.8)]" />}
           </button>
         ))}
       </div>
@@ -153,138 +302,213 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
 
       <div ref={exportRef} className="mt-4 bg-white dark:bg-[#16161d] rounded-3xl p-5 md:p-8 border border-gray-100 dark:border-zinc-800 shadow-sm min-h-[400px]">
         
-        {/* === BESLENME SEKMESİ === */}
-        {activeTab === 'nutrition' && (
-          <div className="space-y-4">
-            <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200 border-b dark:border-zinc-800 pb-3">Güncel Beslenme Programı</h4>
-            {userRole === 'admin' ? (
-              <div className="space-y-3">
-                <textarea 
-                  value={nutritionPlan} 
-                  onChange={(e) => setNutritionPlan(e.target.value)} 
-                  placeholder="Örn: 3000 Kalori - 250g Protein, 300g Karb, 60g Yağ..." 
-                  className="w-full h-48 p-4 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none"
-                />
-                <button onClick={() => handleSaveProgram('nutrition')} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition-all">
-                  Beslenme Programını Güncelle
-                </button>
-              </div>
-            ) : (
-              <div className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-2xl whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
-                {nutritionPlan || "Koçunuz henüz bir beslenme programı atamadı."}
-              </div>
-            )}
+        {/* LÜTFEN ÖĞRENCİ SEÇİN UYARISI */}
+        {userRole === 'admin' && selectedStudentIds.length === 0 ? (
+          <div className="flex items-center justify-center h-64 text-gray-500 font-bold text-sm">
+            Lütfen yukarıdaki panelden en az bir öğrenci seçin.
           </div>
-        )}
-
-        {/* === ANTRENMAN SEKMESİ === */}
-        {activeTab === 'workout' && (
-          <div className="space-y-4">
-            <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200 border-b dark:border-zinc-800 pb-3">Güncel Antrenman Programı</h4>
-            {userRole === 'admin' ? (
-              <div className="space-y-3">
-                <textarea 
-                  value={workoutPlan} 
-                  onChange={(e) => setWorkoutPlan(e.target.value)} 
-                  placeholder="Örn: Push/Pull/Legs Split. Push Günü: Incline Dumbbell Press 4x10..." 
-                  className="w-full h-48 p-4 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none"
-                />
-                <button onClick={() => handleSaveProgram('workout')} className="w-full py-3 bg-brand-purple hover:bg-brand-purpleHover text-white font-bold rounded-xl text-sm transition-all">
-                  Antrenman Programını Güncelle
-                </button>
-              </div>
-            ) : (
-              <div className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-2xl whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
-                {workoutPlan || "Koçunuz henüz bir antrenman programı atamadı."}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* === FORM CHECK SEKMESİ === */}
-        {activeTab === 'formCheck' && (
-          <div className="space-y-6">
-            {userRole === 'student' && (
-               <form onSubmit={handleFileUpload} className="space-y-4 border-b dark:border-zinc-800 pb-6">
-                  <div className="flex flex-col md:flex-row gap-4">
-                    <div className="w-full md:w-1/2">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">GÜNCEL KİLO</label>
-                      <input type="number" step="0.1" value={weight} onChange={e => setWeight(e.target.value)} required className="w-full p-3 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none" />
-                    </div>
-                    <div className="w-full md:w-1/2">
-                      <label className="block text-xs font-bold text-gray-500 mb-1">PODYUM / FORM</label>
-                      <input type="file" name="poseImage" accept="image/*" required className="w-full text-xs text-gray-500 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-brand-purple/10 file:text-brand-purple file:font-bold cursor-pointer" />
-                    </div>
+        ) : (
+          <>
+            {/* === DUYURULAR SEKMESİ === */}
+            {activeTab === 'announcements' && (
+              <div className="space-y-4 animate-fadeIn">
+                <div className="border-b dark:border-zinc-800 pb-3">
+                  <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Son 30 Günün Duyuruları</h4>
+                  <p className="text-xs text-gray-500 mt-1">Antrenörünüzden gelen önemli bildirimler.</p>
+                </div>
+                
+                {userRole === 'admin' && selectedStudentIds.length > 1 ? (
+                  <p className="text-sm text-brand-purple font-bold text-center py-10">Duyuru geçmişini görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
+                ) : announcements.length === 0 ? (
+                  <div className="p-8 text-center text-sm font-medium text-gray-400 bg-gray-50 dark:bg-zinc-950/50 rounded-2xl border border-dashed border-gray-200 dark:border-zinc-800">
+                    Son 30 gün içerisinde gönderilmiş bir duyuru bulunmuyor.
                   </div>
-                  <button type="submit" disabled={isUploading} className="w-full py-3 bg-brand-purple text-white font-bold rounded-xl text-sm disabled:opacity-50">
-                    {isUploading ? 'Yükleniyor...' : 'Form Gönder'}
+                ) : (
+                  <div className="space-y-4">
+                    {announcements.map(ann => (
+                      <div key={ann.id} className="p-5 bg-gradient-to-br from-brand-purple/5 to-transparent dark:from-brand-purple/10 dark:to-transparent border border-brand-purple/20 rounded-2xl relative overflow-hidden group hover:border-brand-purple/40 transition-colors">
+                        <div className="absolute left-0 top-0 w-1 h-full bg-brand-purple" />
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="font-black text-brand-purple text-sm flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                            YENİ DUYURU
+                          </span>
+                          <span className="text-[11px] font-bold text-gray-500 bg-white dark:bg-zinc-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-zinc-800 shadow-sm">
+                            {new Date(ann.created_at).toLocaleDateString('tr-TR')} - {new Date(ann.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{ann.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* === BESLENME SEKMESİ === */}
+            {activeTab === 'nutrition' && (
+              <div className="space-y-4 animate-fadeIn">
+                <div className="flex justify-between items-center border-b dark:border-zinc-800 pb-3">
+                  <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Güncel Beslenme Programı</h4>
+                  <button onClick={() => downloadCSV(nutritionPlan, 'Beslenme_Programi', true)} className="text-xs font-bold px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition-all flex items-center gap-2">
+                    📊 CSV İndir
                   </button>
-               </form>
+                </div>
+                {userRole === 'admin' ? (
+                  <div className="space-y-3">
+                    <textarea 
+                      value={nutritionPlan} 
+                      onChange={(e) => setNutritionPlan(e.target.value)} 
+                      placeholder="Örn: 3000 Kalori - 250g Protein, 300g Karb, 60g Yağ..." 
+                      className="w-full h-48 p-4 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none"
+                    />
+                    <button onClick={() => handleSaveProgram('nutrition')} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/30">
+                      {selectedStudentIds.length > 1 ? 'Toplu Beslenme Programı Ata' : 'Beslenme Programını Güncelle'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-2xl whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {nutritionPlan || "Koçunuz henüz bir beslenme programı atamadı."}
+                  </div>
+                )}
+              </div>
             )}
-            <h4 className="font-bold text-gray-800 dark:text-zinc-200">Form Geçmişi</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {fetchedFormChecks.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
-              {fetchedFormChecks.map(check => (
-                <div key={check.id} className="flex gap-4 p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl items-center border border-gray-100 dark:border-zinc-800">
-                  <img src={check.front_pose_url} alt="Form" className="w-20 h-20 object-cover rounded-xl" />
-                  <div className="text-sm">
-                    <p className="font-black text-brand-purple text-lg">{check.current_weight} kg</p>
-                    <p className="text-xs font-medium text-gray-500 mt-1">{new Date(check.created_at).toLocaleDateString('tr-TR')} - {new Date(check.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* === GÜNLÜK VERİLER SEKMESİ === */}
-        {activeTab === 'daily' && (
-          <div className="space-y-6">
-            {userRole === 'student' && (
-              <form onSubmit={handleDailySubmit} className="space-y-4 border-b dark:border-zinc-800 pb-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1">SU (Litre)</label>
-                    <input type="number" step="0.1" value={water} onChange={e => setWater(e.target.value)} required className="w-full p-3 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1">SODYUM (mg)</label>
-                    <input type="number" value={sodium} onChange={e => setSodium(e.target.value)} required className="w-full p-3 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm" />
-                  </div>
+            {/* === ANTRENMAN SEKMESİ === */}
+            {activeTab === 'workout' && (
+              <div className="space-y-4 animate-fadeIn">
+                <div className="flex justify-between items-center border-b dark:border-zinc-800 pb-3">
+                  <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Güncel Antrenman Programı</h4>
+                  <button onClick={() => downloadCSV(workoutPlan, 'Antrenman_Programi', true)} className="text-xs font-bold px-3 py-1.5 bg-brand-purple/10 text-brand-purple hover:bg-brand-purple/20 rounded-lg transition-all flex items-center gap-2">
+                    📊 CSV İndir
+                  </button>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <input type="number" placeholder="Protein (g)" value={protein} onChange={e => setProtein(e.target.value)} required className="p-3 rounded-xl border dark:border-zinc-800 dark:bg-zinc-950 text-sm font-medium" />
-                  <input type="number" placeholder="Karb (g)" value={carb} onChange={e => setCarb(e.target.value)} required className="p-3 rounded-xl border dark:border-zinc-800 dark:bg-zinc-950 text-sm font-medium" />
-                  <input type="number" placeholder="Yağ (g)" value={fat} onChange={e => setFat(e.target.value)} required className="p-3 rounded-xl border dark:border-zinc-800 dark:bg-zinc-950 text-sm font-medium" />
-                </div>
-                <button type="submit" className="w-full py-3 bg-brand-purple text-white font-bold rounded-xl text-sm">Raporu Gönder</button>
-              </form>
+                {userRole === 'admin' ? (
+                  <div className="space-y-3">
+                    <textarea 
+                      value={workoutPlan} 
+                      onChange={(e) => setWorkoutPlan(e.target.value)} 
+                      placeholder="Örn: Push/Pull/Legs Split. Push Günü: Incline Dumbbell Press 4x10..." 
+                      className="w-full h-48 p-4 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none"
+                    />
+                    <button onClick={() => handleSaveProgram('workout')} className="w-full py-3 bg-brand-purple hover:bg-brand-purpleHover text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-brand-purple/30">
+                      {selectedStudentIds.length > 1 ? 'Toplu Antrenman Programı Ata' : 'Antrenman Programını Güncelle'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-2xl whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {workoutPlan || "Koçunuz henüz bir antrenman programı atamadı."}
+                  </div>
+                )}
+              </div>
             )}
-            <h4 className="font-bold text-gray-800 dark:text-zinc-200">Rapor Geçmişi</h4>
-            <div className="space-y-3">
-              {fetchedDailyLogs.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
-              {fetchedDailyLogs.map(log => (
-                <div key={log.id} className="p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl text-sm grid grid-cols-1 md:grid-cols-2 gap-3 border border-gray-100 dark:border-zinc-800">
-                  <div className="flex justify-between md:block">
-                    <span className="text-gray-500 text-xs font-bold uppercase">Tarih</span> 
-                    <p className="font-bold text-gray-800 dark:text-zinc-200 mt-1">{new Date(log.log_date).toLocaleDateString('tr-TR')}</p>
-                  </div>
-                  <div className="flex justify-between md:block">
-                    <span className="text-gray-500 text-xs font-bold uppercase">Su / Sodyum</span> 
-                    <p className="font-bold text-emerald-500 mt-1">{log.water_lt}L / {log.sodium_mg}mg</p>
-                  </div>
-                  <div className="col-span-1 md:col-span-2 pt-2 border-t dark:border-zinc-800 flex items-center justify-between">
-                    <span className="text-gray-500 text-xs font-bold uppercase">Makrolar (P/C/Y)</span> 
-                    <p className="font-mono bg-zinc-200 dark:bg-zinc-800 px-3 py-1.5 rounded-lg font-bold text-brand-purple text-xs">
-                      {log.macros?.protein}g / {log.macros?.carb}g / {log.macros?.fat}g
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
+            {/* === FORM CHECK SEKMESİ === */}
+            {activeTab === 'formCheck' && (
+              <div className="space-y-6 animate-fadeIn">
+                {userRole === 'student' && (
+                  <form onSubmit={handleFileUpload} className="space-y-4 border-b dark:border-zinc-800 pb-6">
+                      <div className="flex flex-col md:flex-row gap-4">
+                        <div className="w-full md:w-1/2">
+                          <label className="block text-xs font-bold text-gray-500 mb-1">GÜNCEL KİLO (KG)</label>
+                          <input type="number" step="0.1" value={weight} onChange={e => setWeight(e.target.value)} required className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none focus:border-brand-purple" />
+                        </div>
+                        <div className="w-full md:w-1/2">
+                          <label className="block text-xs font-bold text-gray-500 mb-1">PODYUM / FORM FOTOĞRAFI</label>
+                          <input type="file" name="poseImage" accept="image/*" required className="w-full text-xs text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-brand-purple/10 file:text-brand-purple file:font-bold cursor-pointer hover:file:bg-brand-purple/20 transition-all" />
+                        </div>
+                      </div>
+                      <button type="submit" disabled={isUploading} className="w-full py-3 bg-brand-purple text-white font-bold rounded-xl text-sm disabled:opacity-50 shadow-lg shadow-brand-purple/30">
+                        {isUploading ? 'Görsel Yükleniyor...' : 'Formu Antrenörüme Gönder'}
+                      </button>
+                  </form>
+                )}
+                
+                {userRole === 'admin' && selectedStudentIds.length > 1 ? (
+                  <p className="text-sm text-brand-purple font-bold text-center py-10">Form geçmişini görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
+                ) : (
+                  <>
+                    <h4 className="font-bold text-gray-800 dark:text-zinc-200">Form Geçmişi</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {fetchedFormChecks.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
+                      {fetchedFormChecks.map(check => (
+                        <div key={check.id} className="flex gap-4 p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl items-center border border-gray-100 dark:border-zinc-800 hover:scale-[1.02] transition-transform shadow-sm">
+                          <img src={check.front_pose_url} alt="Form" className="w-20 h-20 object-cover rounded-xl shadow-sm" />
+                          <div className="text-sm">
+                            <p className="font-black text-brand-purple text-lg">{check.current_weight} kg</p>
+                            <p className="text-xs font-medium text-gray-500 mt-1">{new Date(check.created_at).toLocaleDateString('tr-TR')} - {new Date(check.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* === GÜNLÜK VERİLER SEKMESİ === */}
+            {activeTab === 'daily' && (
+              <div className="space-y-6 animate-fadeIn">
+                {userRole === 'student' && (
+                  <form onSubmit={handleDailySubmit} className="space-y-4 border-b dark:border-zinc-800 pb-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">SU (Litre)</label>
+                        <input type="number" step="0.1" value={water} onChange={e => setWater(e.target.value)} required className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none focus:border-brand-purple" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">SODYUM (mg)</label>
+                        <input type="number" value={sodium} onChange={e => setSodium(e.target.value)} required className="w-full p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none focus:border-brand-purple" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <input type="number" placeholder="Protein (g)" value={protein} onChange={e => setProtein(e.target.value)} required className="p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm font-medium focus:outline-none focus:border-brand-purple" />
+                      <input type="number" placeholder="Karb (g)" value={carb} onChange={e => setCarb(e.target.value)} required className="p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm font-medium focus:outline-none focus:border-brand-purple" />
+                      <input type="number" placeholder="Yağ (g)" value={fat} onChange={e => setFat(e.target.value)} required className="p-3 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm font-medium focus:outline-none focus:border-brand-purple" />
+                    </div>
+                    <button type="submit" className="w-full py-3 bg-brand-purple text-white font-bold rounded-xl text-sm shadow-lg shadow-brand-purple/30">Günlük Verileri Antrenörüme Gönder</button>
+                  </form>
+                )}
+                
+                {userRole === 'admin' && selectedStudentIds.length > 1 ? (
+                  <p className="text-sm text-brand-purple font-bold text-center py-10">Günlük verileri görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-bold text-gray-800 dark:text-zinc-200">Rapor Geçmişi</h4>
+                      {fetchedDailyLogs.length > 0 && (
+                        <button onClick={() => downloadCSV(fetchedDailyLogs, 'Gunluk_Veriler', false)} className="text-xs font-bold px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all flex items-center gap-2">
+                          📊 Excel İndir
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      {fetchedDailyLogs.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
+                      {fetchedDailyLogs.map(log => (
+                        <div key={log.id} className="p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl text-sm grid grid-cols-1 md:grid-cols-2 gap-3 border border-gray-100 dark:border-zinc-800 hover:border-brand-purple/30 transition-colors shadow-sm">
+                          <div className="flex justify-between md:block">
+                            <span className="text-gray-500 text-xs font-bold uppercase">Tarih</span> 
+                            <p className="font-bold text-gray-800 dark:text-zinc-200 mt-1">{new Date(log.log_date).toLocaleDateString('tr-TR')}</p>
+                          </div>
+                          <div className="flex justify-between md:block">
+                            <span className="text-gray-500 text-xs font-bold uppercase">Su / Sodyum</span> 
+                            <p className="font-bold text-emerald-500 mt-1">{log.water_lt}L / {log.sodium_mg}mg</p>
+                          </div>
+                          <div className="col-span-1 md:col-span-2 pt-2 border-t dark:border-zinc-800 flex items-center justify-between">
+                            <span className="text-gray-500 text-xs font-bold uppercase">Makrolar (P/C/Y)</span> 
+                            <p className="font-mono bg-white dark:bg-zinc-900 px-3 py-1.5 rounded-lg font-bold text-brand-purple text-xs border border-gray-100 dark:border-zinc-800 shadow-sm">
+                              {log.macros?.protein}g / {log.macros?.carb}g / {log.macros?.fat}g
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
