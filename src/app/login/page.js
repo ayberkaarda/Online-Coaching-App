@@ -21,28 +21,18 @@ export default function DashboardPage() {
 
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession();
-    
     if (!session) {
       router.replace('/login');
       return;
     }
-
     setIsAuthenticated(true);
     setCurrentUser(session.user);
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', session.user.id)
-      .single();
-
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
     setUserRole(profile?.role || 'student');
 
     if (profile?.role === 'admin') {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
       setStudents(data || []);
     }
   }
@@ -55,40 +45,40 @@ export default function DashboardPage() {
   if (!isAuthenticated) return null; 
 
   return (
-    <main className="container mx-auto px-4 py-12 relative max-w-5xl">
-      <button 
-        onClick={handleLogout} 
-        className="absolute top-4 left-4 p-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
-      >
-        🚪 Çıkış Yap
+    <main className="container mx-auto px-4 sm:px-6 py-12 relative max-w-6xl">
+      <button onClick={handleLogout} className="absolute top-4 left-4 p-2 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all flex items-center gap-2">
+        🚪 <span className="hidden sm:inline">Çıkış Yap</span>
       </button>
 
       <ThemeToggle />
 
-      <header className="text-center mb-10 space-y-2 mt-8 md:mt-0">
-        <h1 className="text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-brand-purple to-purple-400">
+      <header className="text-center mb-12 space-y-2 mt-12 md:mt-0">
+        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-brand-purple to-purple-400">
           Closed-Loop Coaching Hub
         </h1>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm md:text-base font-medium text-gray-500 dark:text-gray-400 uppercase tracking-widest">
           {userRole === 'admin' ? 'Yönetici Paneli' : 'Öğrenci Paneli'}
         </p>
       </header>
 
-      <div className={`grid grid-cols-1 ${userRole === 'admin' ? 'lg:grid-cols-2' : ''} gap-8 items-start`}>
+      {/* ROL BAZLI KONTROL (Mobilde alt alta, PC'de yan yana) */}
+      <div className={`flex flex-col lg:flex-row gap-8 items-start`}>
+        
+        {/* Sol Sütun: Bildirim Gönder (Sadece Admin) */}
         {userRole === 'admin' && (
-          <div className="space-y-6">
+          <div className="w-full lg:w-1/3 space-y-6">
             <NotificationForm students={students} />
           </div>
         )}
 
-        <div className={userRole === 'student' ? 'max-w-2xl mx-auto w-full' : ''}>
-          {/* students datasını içeri yolladık */}
+        {/* Sağ Sütun: Sekmeler ve İçerik (Herkes görür, Admin seçer) */}
+        <div className={`w-full ${userRole === 'admin' ? 'lg:w-2/3' : 'max-w-3xl mx-auto'}`}>
           <DashboardTabs currentUserId={currentUser?.id} userRole={userRole} students={students} />
         </div>
       </div>
 
       {userRole === 'admin' && (
-        <div className="mt-12">
+        <div className="mt-16 pt-8 border-t border-gray-200 dark:border-zinc-800">
           <AdminUserManagement students={students} />
         </div>
       )}
