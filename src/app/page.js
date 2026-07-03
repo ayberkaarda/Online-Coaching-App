@@ -46,15 +46,15 @@ export default function DashboardPage() {
   if (!isAuthenticated) return null; 
 
   return (
-    <main className="container mx-auto px-4 py-12 relative max-w-5xl">
-      {/* Üst Menü İşlemleri */}
-      <button 
-        onClick={handleLogout} 
-        className="absolute top-4 left-4 p-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
-      >
-        🚪 Çıkış Yap
-      </button>
-
+    <main className="container mx-auto px-4 sm:px-6 py-12 relative max-w-6xl">
+      <div className="absolute top-4 left-4 flex gap-2">
+        <button onClick={() => router.push('/profile')} className="p-2 text-sm font-bold text-brand-purple hover:bg-brand-purple/10 rounded-lg transition-all flex items-center gap-2">
+          ⚙️ <span className="hidden sm:inline">Profilim</span>
+        </button>
+        <button onClick={handleLogout} className="p-2 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all flex items-center gap-2">
+          🚪 <span className="hidden sm:inline">Çıkış Yap</span>
+        </button>
+      </div>
       <ThemeToggle />
 
       <header className="text-center mb-10 space-y-2 mt-8 md:mt-0">
