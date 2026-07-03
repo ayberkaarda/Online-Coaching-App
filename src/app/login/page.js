@@ -30,7 +30,6 @@ export default function DashboardPage() {
     setIsAuthenticated(true);
     setCurrentUser(session.user);
 
-    // Giriş yapan kullanıcının rolünü (admin/student) bul
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
@@ -39,7 +38,6 @@ export default function DashboardPage() {
 
     setUserRole(profile?.role || 'student');
 
-    // Sadece adminse tüm öğrencileri çek (Güvenlik)
     if (profile?.role === 'admin') {
       const { data } = await supabase
         .from('profiles')
@@ -76,19 +74,16 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      {/* ROL BAZLI GÖRÜNÜM (UI) KONTROLÜ */}
       <div className={`grid grid-cols-1 ${userRole === 'admin' ? 'lg:grid-cols-2' : ''} gap-8 items-start`}>
-        
-        {/* Admin Panelleri (Sadece Admin Görür) */}
         {userRole === 'admin' && (
           <div className="space-y-6">
             <NotificationForm students={students} />
           </div>
         )}
 
-        {/* Sekmeler (Herkes Görür ama veriler kendi ID'sine özeldir) */}
         <div className={userRole === 'student' ? 'max-w-2xl mx-auto w-full' : ''}>
-          <DashboardTabs currentUserId={currentUser?.id} userRole={userRole} />
+          {/* students datasını içeri yolladık */}
+          <DashboardTabs currentUserId={currentUser?.id} userRole={userRole} students={students} />
         </div>
       </div>
 
