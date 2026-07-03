@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import html2canvas from "html2canvas";
 import { supabase } from "@/lib/supabase";
-
-// --- YENİ: Chart.js İçe Aktarımları ---
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -18,10 +16,8 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
-// Chart.js Modüllerini Kaydet
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
-// Güvenli CSV İndirme Fonksiyonu
 const downloadCSV = (data, filename, isText = false) => {
   if (!data || data.length === 0) {
     alert("İndirilecek veri bulunamadı.");
@@ -33,15 +29,12 @@ const downloadCSV = (data, filename, isText = false) => {
     csvContent += "Program Detayı\n" + formattedText;
   } else {
     const headers = Object.keys(data[0]).join(",");
-    const rows = data.map(obj => 
-      Object.values(obj).map(value => `"${value}"`).join(",")
-    ).join("\n");
+    const rows = data.map(obj => Object.values(obj).map(value => `"${value}"`).join(",")).join("\n");
     csvContent += headers + "\n" + rows;
   }
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
-  link.setAttribute("href", url);
+  link.setAttribute("href", URL.createObjectURL(blob));
   link.setAttribute("download", `${filename}.csv`);
   document.body.appendChild(link);
   link.click();
@@ -52,35 +45,26 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
   const [activeTab, setActiveTab] = useState('formCheck');
   const exportRef = useRef(null);
 
-  // Avatar, Arama ve Çoklu Seçim State'leri
+  // Arama, Sayfalama, Seçim
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [currentPage, setCurrentPage] = useState(0);
   const ITEMS_PER_PAGE = 5;
 
+  // Öncesi/Sonrası (Before/After) State'leri
+  const [compareMode, setCompareMode] = useState(false);
+  const [beforeImageId, setBeforeImageId] = useState('');
+  const [afterImageId, setAfterImageId] = useState('');
+
   const studentsList = students?.filter(s => s.role !== 'admin') || [];
-  const filteredStudents = studentsList.filter(s => 
-    s.full_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredStudents = studentsList.filter(s => s.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredStudents.length / ITEMS_PER_PAGE);
   const criticalStudents = studentsList.filter(s => s.current_streak === 0);
 
   const nextBtn = () => setCurrentPage(p => Math.min(totalPages - 1, p + 1));
   const prevBtn = () => setCurrentPage(p => Math.max(0, p - 1));
-
-  const toggleStudent = (id) => {
-    setSelectedStudentIds(prev => 
-      prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]
-    );
-  };
-
-  const selectAll = () => {
-    if (selectedStudentIds.length === filteredStudents.length) {
-      setSelectedStudentIds([]); 
-    } else {
-      setSelectedStudentIds(filteredStudents.map(s => s.id)); 
-    }
-  };
+  const toggleStudent = (id) => setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
+  const selectAll = () => setSelectedStudentIds(selectedStudentIds.length === filteredStudents.length ? [] : filteredStudents.map(s => s.id));
 
   const targetId = userRole === 'admin' ? (selectedStudentIds.length === 1 ? selectedStudentIds[0] : null) : currentUserId;
 
@@ -89,10 +73,10 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
   const [fetchedDailyLogs, setFetchedDailyLogs] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [templates, setTemplates] = useState([]);
-  const [workoutLogs, setWorkoutLogs] = useState([]); // YENİ: Antrenman Günlüğü
-  
+  const [workoutLogs, setWorkoutLogs] = useState([]);
   const [nutritionPlan, setNutritionPlan] = useState('');
   const [workoutPlan, setWorkoutPlan] = useState('');
+  const [currentStreak, setCurrentStreak] = useState(0);
 
   // Form State'leri
   const [isUploading, setIsUploading] = useState(false);
@@ -102,14 +86,11 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
   const [protein, setProtein] = useState('');
   const [carb, setCarb] = useState('');
   const [fat, setFat] = useState('');
-
-  // YENİ: Antrenman Log State'leri
   const [exerciseName, setExerciseName] = useState('');
   const [liftWeight, setLiftWeight] = useState('');
   const [reps, setReps] = useState('');
   const [rpe, setRpe] = useState('');
 
-  // Verileri Çek
   useEffect(() => {
     if (userRole === 'admin') {
       const fetchTemplates = async () => {
@@ -128,6 +109,10 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
       if (activeTab === 'formCheck' || activeTab === 'stats') {
         const { data } = await supabase.from('form_checks').select('*').eq('student_id', targetId).order('created_at', { ascending: false });
         setFetchedFormChecks(data || []);
+        if (data?.length >= 2) {
+          setBeforeImageId(data[data.length - 1].id);
+          setAfterImageId(data[0].id);
+        }
       } else if (activeTab === 'daily') {
         const { data } = await supabase.from('daily_logs').select('*').eq('student_id', targetId).order('log_date', { ascending: false });
         setFetchedDailyLogs(data || []);
@@ -135,8 +120,7 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
         const { data } = await supabase.from('workout_logs').select('*').eq('student_id', targetId).order('created_at', { ascending: false });
         setWorkoutLogs(data || []);
       } else if (activeTab === 'announcements') {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const { data } = await supabase.from('notifications').select('*').eq('student_id', targetId).gte('created_at', thirtyDaysAgo.toISOString()).order('created_at', { ascending: false });
         setAnnouncements(data || []);
       }
@@ -145,6 +129,7 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
       if (profileData) {
         setNutritionPlan(profileData.nutrition_plan || '');
         setWorkoutPlan(profileData.workout_plan || '');
+        setCurrentStreak(profileData.current_streak || 0);
       }
     };
     fetchData();
@@ -153,8 +138,7 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
   useEffect(() => {
     if (userRole === 'student' && currentUserId) {
       const getInitialAnnouncements = async () => {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const { data } = await supabase.from('notifications').select('id').eq('student_id', currentUserId).gte('created_at', thirtyDaysAgo.toISOString());
         setAnnouncements(data || []);
       };
@@ -209,16 +193,9 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
     setFetchedDailyLogs(data || []);
   };
 
-  // YENİ: Antrenman Günlüğü Gönderimi
   const handleWorkoutLogSubmit = async (e) => {
     e.preventDefault();
-    await supabase.from('workout_logs').insert([{
-      student_id: currentUserId,
-      exercise_name: exerciseName,
-      weight_kg: parseFloat(liftWeight),
-      reps: parseInt(reps),
-      rpe: parseInt(rpe) || null
-    }]);
+    await supabase.from('workout_logs').insert([{ student_id: currentUserId, exercise_name: exerciseName, weight_kg: parseFloat(liftWeight), reps: parseInt(reps), rpe: parseInt(rpe) || null }]);
     setExerciseName(''); setLiftWeight(''); setReps(''); setRpe('');
     const { data } = await supabase.from('workout_logs').select('*').eq('student_id', currentUserId).order('created_at', { ascending: false });
     setWorkoutLogs(data || []);
@@ -232,38 +209,24 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
 
   const currentStudentProfile = students?.find(s => s.id === currentUserId);
 
-  // YENİ: Chart.js Grafik Verisi Hazırlama (Kilo Değişimi)
   const chartData = {
-    // Form check verilerini eskiden yeniye doğru sıralayıp tarihleri alır
     labels: fetchedFormChecks.slice().reverse().map(c => new Date(c.created_at).toLocaleDateString('tr-TR')),
-    datasets: [
-      {
+    datasets: [{
         label: 'Vücut Ağırlığı (kg)',
         data: fetchedFormChecks.slice().reverse().map(c => c.current_weight),
-        borderColor: '#8b5cf6',
-        backgroundColor: 'rgba(139, 92, 246, 0.2)',
-        tension: 0.4,
-        fill: true,
-        pointBackgroundColor: '#8b5cf6',
-        pointBorderColor: '#fff',
-        pointHoverBackgroundColor: '#fff',
-        pointHoverBorderColor: '#8b5cf6',
-        pointRadius: 5,
-        pointHoverRadius: 7,
-      },
-    ],
+        borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.2)',
+        tension: 0.4, fill: true, pointBackgroundColor: '#8b5cf6', pointBorderColor: '#fff',
+        pointHoverBackgroundColor: '#fff', pointHoverBorderColor: '#8b5cf6', pointRadius: 5, pointHoverRadius: 7,
+    }],
   };
+  const chartOptions = { responsive: true, plugins: { legend: { position: 'top', labels: { color: '#888' } }, title: { display: false } }, scales: { y: { ticks: { color: '#888' }, grid: { color: 'rgba(200, 200, 200, 0.1)' } }, x: { ticks: { color: '#888' }, grid: { display: false } } } };
 
-  const chartOptions = {
-    responsive: true,
-    plugins: {
-      legend: { position: 'top', labels: { color: '#888' } },
-      title: { display: false },
-    },
-    scales: {
-      y: { ticks: { color: '#888' }, grid: { color: 'rgba(200, 200, 200, 0.1)' } },
-      x: { ticks: { color: '#888' }, grid: { display: false } }
-    }
+  // Makro Oran Hesaplayıcı
+  const getMacroPercentage = (p, c, f) => {
+    const pro = parseFloat(p) || 0; const car = parseFloat(c) || 0; const fat = parseFloat(f) || 0;
+    const total = pro + car + fat;
+    if (total === 0) return { p: 0, c: 0, f: 0 };
+    return { p: (pro/total)*100, c: (car/total)*100, f: (fat/total)*100 };
   };
 
   return (
@@ -275,7 +238,7 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
             <p className="text-xs text-gray-600 dark:text-gray-300">Raporları aksatmadan ilerliyorsun, bozma!</p>
           </div>
           <div className="text-3xl font-black text-orange-500 drop-shadow-md animate-pulse">
-            {currentStudentProfile?.current_streak || 0} GÜN
+          {currentStreak} GÜN
           </div>
         </div>
       )}
@@ -301,20 +264,11 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b border-gray-100 dark:border-zinc-800 pb-4">
               <div>
                 <h3 className="text-sm font-black text-brand-purple uppercase tracking-widest">Öğrenci Yönetimi</h3>
-                <p className="text-xs text-gray-500 mt-1">Gelişmiş Arama ve Çoklu Seçim</p>
               </div>
-              
               <div className="relative w-full md:w-64">
                 <span className="absolute inset-y-0 left-3 flex items-center text-gray-400 text-sm">🔍</span>
-                <input 
-                  type="text" 
-                  placeholder="Öğrenci Ara..." 
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(0); }}
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 text-sm focus:outline-none focus:border-brand-purple transition-all"
-                />
+                <input type="text" placeholder="Öğrenci Ara..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(0); }} className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 text-sm focus:outline-none focus:border-brand-purple transition-all" />
               </div>
-
               <div className="flex items-center gap-4 w-full md:w-auto justify-between">
                 <button onClick={selectAll} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-300 hover:bg-brand-purple hover:text-white transition-all whitespace-nowrap">
                   {selectedStudentIds.length === filteredStudents.length && filteredStudents.length > 0 ? 'SEÇİMİ TEMİZLE' : 'TÜMÜNÜ SEÇ'}
@@ -350,17 +304,11 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
                 </div>
               )}
             </div>
-
-            {selectedStudentIds.length > 1 && (
-              <div className="mt-4 p-3 bg-brand-purple/10 border border-brand-purple/30 text-brand-purple text-xs font-bold text-center rounded-xl animate-pulse">
-                {selectedStudentIds.length} ÖĞRENCİ SEÇİLİ: Toplu Atama Modu Aktif!
-              </div>
-            )}
           </div>
         </>
       )}
 
-      {/* YENİ: İstatistikler Sekmesi Eklendi */}
+      {/* SEKMELER */}
       <div className="flex overflow-x-auto hide-scrollbar gap-6 border-b border-gray-200 dark:border-zinc-800 text-sm font-medium pb-2">
         {['announcements', 'stats', 'formCheck', 'daily', 'nutrition', 'workout'].map((tab) => (
           <button 
@@ -380,59 +328,47 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
       </div>
 
       <div className="flex justify-end mt-4">
-        <button onClick={handleDownloadImage} className="text-xs bg-brand-purple/10 text-brand-purple hover:bg-brand-purple/20 px-3 py-2 rounded-lg font-bold transition-all">
-          Görsel Olarak İndir
-        </button>
+        <button onClick={handleDownloadImage} className="text-xs bg-brand-purple/10 text-brand-purple hover:bg-brand-purple/20 px-3 py-2 rounded-lg font-bold transition-all">Görsel İndir</button>
       </div>
 
       <div ref={exportRef} className="mt-4 bg-white dark:bg-[#16161d] rounded-3xl p-5 md:p-8 border border-gray-100 dark:border-zinc-800 shadow-sm min-h-[400px]">
+        
         {userRole === 'admin' && selectedStudentIds.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-500 font-bold text-sm">
-            <span className="text-4xl mb-3 opacity-50">👥</span>
-            Lütfen yukarıdaki panelden en az bir öğrenci seçin.
+            <span className="text-4xl mb-3 opacity-50">👥</span>Lütfen yukarıdaki panelden en az bir öğrenci seçin.
           </div>
         ) : (
           <>
-            {/* === YENİ: İSTATİSTİKLER VE GRAFİKLER === */}
             {activeTab === 'stats' && (
               <div className="space-y-6 animate-fadeIn">
                 <div className="border-b dark:border-zinc-800 pb-3">
                   <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Gelişim Analizi</h4>
-                  <p className="text-xs text-gray-500 mt-1">Form check verilerine dayalı vücut ağırlığı değişimi.</p>
                 </div>
-                
                 {userRole === 'admin' && selectedStudentIds.length > 1 ? (
                   <p className="text-sm text-brand-purple font-bold text-center py-10">Grafikleri görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
                 ) : fetchedFormChecks.length < 2 ? (
-                  <div className="p-8 text-center text-sm font-medium text-gray-400 bg-gray-50 dark:bg-zinc-950/50 rounded-2xl border border-dashed border-gray-200 dark:border-zinc-800">
-                    Grafik oluşturabilmek için en az 2 form check verisine ihtiyaç var.
-                  </div>
+                  <div className="p-8 text-center text-sm font-medium text-gray-400 bg-gray-50 dark:bg-zinc-950/50 rounded-2xl border border-dashed border-gray-200 dark:border-zinc-800">Grafik oluşturabilmek için en az 2 form check verisine ihtiyaç var.</div>
                 ) : (
-                  <div className="p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm">
-                    <Line data={chartData} options={chartOptions} />
-                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm"><Line data={chartData} options={chartOptions} /></div>
                 )}
               </div>
             )}
 
-            {/* === DUYURULAR === */}
             {activeTab === 'announcements' && (
               <div className="space-y-4 animate-fadeIn">
-                <div className="border-b dark:border-zinc-800 pb-3">
-                  <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Son 30 Günün Duyuruları</h4>
-                </div>
+                <div className="border-b dark:border-zinc-800 pb-3"><h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Son 30 Günün Duyuruları</h4></div>
                 {userRole === 'admin' && selectedStudentIds.length > 1 ? (
-                  <p className="text-sm text-brand-purple font-bold text-center py-10">Duyuru geçmişini görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
+                  <p className="text-sm text-brand-purple font-bold text-center py-10">Sadece 1 öğrenci seçili bırakın.</p>
                 ) : announcements.length === 0 ? (
-                  <div className="p-8 text-center text-sm font-medium text-gray-400 bg-gray-50 dark:bg-zinc-950/50 rounded-2xl border border-dashed border-gray-200 dark:border-zinc-800">Son 30 gün içerisinde gönderilmiş bir duyuru bulunmuyor.</div>
+                  <div className="p-8 text-center text-sm font-medium text-gray-400 bg-gray-50 dark:bg-zinc-950/50 rounded-2xl border border-dashed border-gray-200 dark:border-zinc-800">Duyuru bulunmuyor.</div>
                 ) : (
                   <div className="space-y-4">
                     {announcements.map(ann => (
-                      <div key={ann.id} className="p-5 bg-gradient-to-br from-brand-purple/5 to-transparent dark:from-brand-purple/10 dark:to-transparent border border-brand-purple/20 rounded-2xl relative overflow-hidden group hover:border-brand-purple/40 transition-colors">
+                      <div key={ann.id} className="p-5 bg-gradient-to-br from-brand-purple/5 to-transparent dark:from-brand-purple/10 dark:to-transparent border border-brand-purple/20 rounded-2xl relative overflow-hidden">
                         <div className="absolute left-0 top-0 w-1 h-full bg-brand-purple" />
                         <div className="flex justify-between items-center mb-3">
                           <span className="font-black text-brand-purple text-sm flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>YENİ DUYURU</span>
-                          <span className="text-[11px] font-bold text-gray-500 bg-white dark:bg-zinc-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-zinc-800 shadow-sm">{new Date(ann.created_at).toLocaleDateString('tr-TR')} - {new Date(ann.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</span>
+                          <span className="text-[11px] font-bold text-gray-500 bg-white dark:bg-zinc-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-zinc-800">{new Date(ann.created_at).toLocaleDateString('tr-TR')}</span>
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{ann.message}</p>
                       </div>
@@ -442,7 +378,6 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
               </div>
             )}
 
-            {/* === BESLENME === */}
             {activeTab === 'nutrition' && (
               <div className="space-y-4 animate-fadeIn">
                 <div className="flex justify-between items-center border-b dark:border-zinc-800 pb-3">
@@ -452,13 +387,13 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
                 {userRole === 'admin' ? (
                   <div className="space-y-3">
                     <div className="flex justify-end mb-2">
-                      <select onChange={(e) => e.target.value && setNutritionPlan(e.target.value)} className="p-2 text-xs font-bold rounded-lg border border-brand-purple/30 bg-brand-purple/5 text-brand-purple focus:outline-none cursor-pointer">
+                      <select onChange={(e) => e.target.value && setNutritionPlan(e.target.value)} className="p-2 text-xs font-bold rounded-lg border border-brand-purple/30 bg-brand-purple/5 text-brand-purple focus:outline-none">
                         <option value="">+ Hazır Şablon Kullan</option>
                         {templates.filter(t => t.category === 'nutrition').map(t => <option key={t.id} value={t.content}>{t.title}</option>)}
                       </select>
                     </div>
                     <textarea value={nutritionPlan} onChange={(e) => setNutritionPlan(e.target.value)} placeholder="Örn: 3000 Kalori..." className="w-full h-48 p-4 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none" />
-                    <button onClick={() => handleSaveProgram('nutrition')} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/30">{selectedStudentIds.length > 1 ? 'Toplu Beslenme Programı Ata' : 'Beslenme Programını Güncelle'}</button>
+                    <button onClick={() => handleSaveProgram('nutrition')} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition-all">{selectedStudentIds.length > 1 ? 'Toplu Beslenme Programı Ata' : 'Beslenme Programını Güncelle'}</button>
                   </div>
                 ) : (
                   <div className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-2xl whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{nutritionPlan || "Koçunuz henüz bir beslenme programı atamadı."}</div>
@@ -466,7 +401,6 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
               </div>
             )}
 
-            {/* === ANTRENMAN VE GÜNLÜK === */}
             {activeTab === 'workout' && (
               <div className="space-y-8 animate-fadeIn">
                 <div className="space-y-4">
@@ -477,24 +411,23 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
                   {userRole === 'admin' ? (
                     <div className="space-y-3">
                       <div className="flex justify-end mb-2">
-                        <select onChange={(e) => e.target.value && setWorkoutPlan(e.target.value)} className="p-2 text-xs font-bold rounded-lg border border-brand-purple/30 bg-brand-purple/5 text-brand-purple focus:outline-none cursor-pointer">
+                        <select onChange={(e) => e.target.value && setWorkoutPlan(e.target.value)} className="p-2 text-xs font-bold rounded-lg border border-brand-purple/30 bg-brand-purple/5 text-brand-purple focus:outline-none">
                           <option value="">+ Hazır Şablon Kullan</option>
                           {templates.filter(t => t.category === 'workout').map(t => <option key={t.id} value={t.content}>{t.title}</option>)}
                         </select>
                       </div>
                       <textarea value={workoutPlan} onChange={(e) => setWorkoutPlan(e.target.value)} placeholder="Örn: Push/Pull/Legs Split..." className="w-full h-48 p-4 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none" />
-                      <button onClick={() => handleSaveProgram('workout')} className="w-full py-3 bg-brand-purple hover:bg-brand-purpleHover text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-brand-purple/30">{selectedStudentIds.length > 1 ? 'Toplu Antrenman Programı Ata' : 'Antrenman Programını Güncelle'}</button>
+                      <button onClick={() => handleSaveProgram('workout')} className="w-full py-3 bg-brand-purple hover:bg-brand-purpleHover text-white font-bold rounded-xl text-sm transition-all">{selectedStudentIds.length > 1 ? 'Toplu Antrenman Programı Ata' : 'Antrenman Programını Güncelle'}</button>
                     </div>
                   ) : (
                     <div className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-2xl whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{workoutPlan || "Koçunuz henüz bir antrenman programı atamadı."}</div>
                   )}
                 </div>
 
-                {/* YENİ: İNTERAKTİF ANTRENMAN GÜNLÜĞÜ (WORKOUT LOG) */}
                 <div className="space-y-4 pt-6 border-t border-gray-100 dark:border-zinc-800">
                   <div className="flex justify-between items-center border-b dark:border-zinc-800 pb-3">
                     <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">İnteraktif Antrenman Günlüğü</h4>
-                    {workoutLogs.length > 0 && <button onClick={() => downloadCSV(workoutLogs, 'Antrenman_Gecmisi', false)} className="text-xs font-bold px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all flex items-center gap-2">📥 Logları İndir</button>}
+                    {workoutLogs.length > 0 && <button onClick={() => downloadCSV(workoutLogs, 'Antrenman_Gecmisi', false)} className="text-xs font-bold px-3 py-1.5 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 rounded-lg transition-all">📥 Logları İndir</button>}
                   </div>
                   
                   {userRole === 'student' && (
@@ -518,14 +451,11 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
                       {workoutLogs.length === 0 && <p className="text-sm text-gray-400 py-4">Henüz antrenman kaydı girilmedi.</p>}
                       {workoutLogs.map(log => (
                         <div key={log.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-zinc-950 border border-gray-100 dark:border-zinc-800 rounded-xl hover:border-brand-purple/30 transition-colors">
-                          <div>
-                            <p className="font-bold text-gray-800 dark:text-zinc-200 text-sm">{log.exercise_name}</p>
-                            <p className="text-[10px] text-gray-500 mt-0.5">{new Date(log.created_at).toLocaleDateString('tr-TR')}</p>
-                          </div>
+                          <div><p className="font-bold text-gray-800 dark:text-zinc-200 text-sm">{log.exercise_name}</p><p className="text-[10px] text-gray-500 mt-0.5">{new Date(log.created_at).toLocaleDateString('tr-TR')}</p></div>
                           <div className="flex gap-2 text-xs font-mono font-bold">
                             <span className="bg-zinc-200 dark:bg-zinc-800 px-2 py-1 rounded-md text-brand-purple">{log.weight_kg} kg</span>
                             <span className="bg-zinc-200 dark:bg-zinc-800 px-2 py-1 rounded-md text-blue-500">{log.reps} Tekrar</span>
-                            {log.rpe && <span className="bg-orange-100 dark:bg-orange-900/20 px-2 py-1 rounded-md text-orange-600 dark:text-orange-400">RPE {log.rpe}</span>}
+                            {log.rpe && <span className="bg-orange-100 dark:bg-orange-900/20 px-2 py-1 rounded-md text-orange-600">RPE {log.rpe}</span>}
                           </div>
                         </div>
                       ))}
@@ -535,10 +465,19 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
               </div>
             )}
 
-            {/* === DİĞER SEKMELER (FormCheck & Daily aynı kalacak şekilde render ediliyor) === */}
+            {/* === YENİ: BEFORE/AFTER EKLENMİŞ FORM CHECK === */}
             {activeTab === 'formCheck' && (
               <div className="space-y-6 animate-fadeIn">
-                {userRole === 'student' && (
+                <div className="flex justify-between items-center border-b dark:border-zinc-800 pb-3">
+                  <h4 className="font-bold text-lg text-gray-800 dark:text-zinc-200">Form Geçmişi ve Kıyaslama</h4>
+                  {fetchedFormChecks.length >= 2 && (
+                    <button onClick={() => setCompareMode(!compareMode)} className={`text-xs font-bold px-4 py-2 rounded-lg transition-all ${compareMode ? 'bg-red-500 text-white shadow-md shadow-red-500/30' : 'bg-brand-purple/10 text-brand-purple hover:bg-brand-purple/20'}`}>
+                      {compareMode ? 'Kıyaslamayı Kapat' : 'Öncesi / Sonrası Yap'}
+                    </button>
+                  )}
+                </div>
+
+                {userRole === 'student' && !compareMode && (
                   <form onSubmit={handleFileUpload} className="space-y-4 border-b dark:border-zinc-800 pb-6">
                       <div className="flex flex-col md:flex-row gap-4">
                         <div className="w-full md:w-1/2">
@@ -555,28 +494,62 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
                       </button>
                   </form>
                 )}
+                
                 {userRole === 'admin' && selectedStudentIds.length > 1 ? (
                   <p className="text-sm text-brand-purple font-bold text-center py-10">Form geçmişini görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
                 ) : (
                   <>
-                    <h4 className="font-bold text-gray-800 dark:text-zinc-200">Form Geçmişi</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {fetchedFormChecks.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
-                      {fetchedFormChecks.map(check => (
-                        <div key={check.id} className="flex gap-4 p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl items-center border border-gray-100 dark:border-zinc-800 hover:scale-[1.02] transition-transform shadow-sm">
-                          <img src={check.front_pose_url} alt="Form" className="w-20 h-20 object-cover rounded-xl shadow-sm" />
-                          <div className="text-sm">
-                            <p className="font-black text-brand-purple text-lg">{check.current_weight} kg</p>
-                            <p className="text-xs font-medium text-gray-500 mt-1">{new Date(check.created_at).toLocaleDateString('tr-TR')} - {new Date(check.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</p>
+                    {/* KIYASLAMA MODU (BEFORE / AFTER) */}
+                    {compareMode ? (
+                      <div className="space-y-6 bg-gray-50 dark:bg-zinc-950 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-inner">
+                        <div className="flex flex-col md:flex-row gap-6">
+                          {/* ÖNCESİ (BEFORE) */}
+                          <div className="flex-1 space-y-3">
+                            <label className="block text-sm font-black text-gray-600 dark:text-gray-300 text-center uppercase tracking-widest border-b dark:border-zinc-800 pb-2">Öncesi (Before)</label>
+                            <select value={beforeImageId} onChange={(e) => setBeforeImageId(e.target.value)} className="w-full p-2 rounded-lg border dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold focus:outline-none focus:border-brand-purple">
+                              {fetchedFormChecks.map(check => (
+                                <option key={check.id} value={check.id}>{new Date(check.created_at).toLocaleDateString('tr-TR')} - {check.current_weight} kg</option>
+                              ))}
+                            </select>
+                            <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden shadow-lg border-4 border-gray-200 dark:border-zinc-800">
+                              <img src={fetchedFormChecks.find(c => c.id === beforeImageId)?.front_pose_url} alt="Before" className="object-cover w-full h-full" />
+                            </div>
+                          </div>
+
+                          {/* SONRASI (AFTER) */}
+                          <div className="flex-1 space-y-3">
+                            <label className="block text-sm font-black text-brand-purple text-center uppercase tracking-widest border-b dark:border-zinc-800 pb-2">Sonrası (After)</label>
+                            <select value={afterImageId} onChange={(e) => setAfterImageId(e.target.value)} className="w-full p-2 rounded-lg border dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold focus:outline-none focus:border-brand-purple">
+                              {fetchedFormChecks.map(check => (
+                                <option key={check.id} value={check.id}>{new Date(check.created_at).toLocaleDateString('tr-TR')} - {check.current_weight} kg</option>
+                              ))}
+                            </select>
+                            <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden shadow-lg border-4 border-brand-purple">
+                              <img src={fetchedFormChecks.find(c => c.id === afterImageId)?.front_pose_url} alt="After" className="object-cover w-full h-full" />
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {fetchedFormChecks.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
+                        {fetchedFormChecks.map(check => (
+                          <div key={check.id} className="flex gap-4 p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl items-center border border-gray-100 dark:border-zinc-800 hover:scale-[1.02] transition-transform shadow-sm">
+                            <img src={check.front_pose_url} alt="Form" className="w-20 h-20 object-cover rounded-xl shadow-sm" />
+                            <div className="text-sm">
+                              <p className="font-black text-brand-purple text-lg">{check.current_weight} kg</p>
+                              <p className="text-xs font-medium text-gray-500 mt-1">{new Date(check.created_at).toLocaleDateString('tr-TR')} - {new Date(check.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
             )}
 
+            {/* === YENİ: GÖRSEL MAKRO İLERLEME ÇUBUKLU GÜNLÜK VERİLER === */}
             {activeTab === 'daily' && (
               <div className="space-y-6 animate-fadeIn">
                 {userRole === 'student' && (
@@ -599,26 +572,43 @@ export function DashboardTabs({ currentUserId, userRole, students }) {
                     <button type="submit" className="w-full py-3 bg-brand-purple text-white font-bold rounded-xl text-sm shadow-lg shadow-brand-purple/30">Günlük Verileri Antrenörüme Gönder</button>
                   </form>
                 )}
+                
                 {userRole === 'admin' && selectedStudentIds.length > 1 ? (
                   <p className="text-sm text-brand-purple font-bold text-center py-10">Günlük verileri görüntülemek için sadece 1 öğrenci seçili bırakın.</p>
                 ) : (
                   <>
                     <div className="flex justify-between items-center">
-                      <h4 className="font-bold text-gray-800 dark:text-zinc-200">Rapor Geçmişi</h4>
-                      {fetchedDailyLogs.length > 0 && <button onClick={() => downloadCSV(fetchedDailyLogs, 'Gunluk_Veriler', false)} className="text-xs font-bold px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all flex items-center gap-2">📊 Excel İndir</button>}
+                      <h4 className="font-bold text-gray-800 dark:text-zinc-200">Rapor Geçmişi ve Makro Dağılımı</h4>
+                      {fetchedDailyLogs.length > 0 && <button onClick={() => downloadCSV(fetchedDailyLogs, 'Gunluk_Veriler', false)} className="text-xs font-bold px-3 py-1.5 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 rounded-lg transition-all">📊 Excel İndir</button>}
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {fetchedDailyLogs.length === 0 && <p className="text-sm text-gray-400">Kayıt bulunamadı.</p>}
-                      {fetchedDailyLogs.map(log => (
-                        <div key={log.id} className="p-4 bg-gray-50 dark:bg-zinc-950 rounded-2xl text-sm grid grid-cols-1 md:grid-cols-2 gap-3 border border-gray-100 dark:border-zinc-800 hover:border-brand-purple/30 transition-colors shadow-sm">
-                          <div className="flex justify-between md:block"><span className="text-gray-500 text-xs font-bold uppercase">Tarih</span><p className="font-bold text-gray-800 dark:text-zinc-200 mt-1">{new Date(log.log_date).toLocaleDateString('tr-TR')}</p></div>
-                          <div className="flex justify-between md:block"><span className="text-gray-500 text-xs font-bold uppercase">Su / Sodyum</span><p className="font-bold text-emerald-500 mt-1">{log.water_lt}L / {log.sodium_mg}mg</p></div>
-                          <div className="col-span-1 md:col-span-2 pt-2 border-t dark:border-zinc-800 flex items-center justify-between">
-                            <span className="text-gray-500 text-xs font-bold uppercase">Makrolar (P/C/Y)</span>
-                            <p className="font-mono bg-white dark:bg-zinc-900 px-3 py-1.5 rounded-lg font-bold text-brand-purple text-xs border border-gray-100 dark:border-zinc-800 shadow-sm">{log.macros?.protein}g / {log.macros?.carb}g / {log.macros?.fat}g</p>
+                      {fetchedDailyLogs.map(log => {
+                        const macros = getMacroPercentage(log.macros?.protein, log.macros?.carb, log.macros?.fat);
+                        return (
+                          <div key={log.id} className="p-5 bg-gray-50 dark:bg-zinc-950 rounded-3xl text-sm border border-gray-100 dark:border-zinc-800 hover:border-brand-purple/30 transition-colors shadow-sm">
+                            <div className="flex justify-between items-center mb-4">
+                              <span className="font-bold text-gray-800 dark:text-zinc-200">{new Date(log.log_date).toLocaleDateString('tr-TR')}</span>
+                              <span className="font-black text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-lg">💧 {log.water_lt}L | 🧂 {log.sodium_mg}mg</span>
+                            </div>
+                            
+                            {/* İlerleme Çubuğu */}
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs font-bold">
+                                <span className="text-red-500">Protein: {log.macros?.protein}g</span>
+                                <span className="text-blue-500">Karb: {log.macros?.carb}g</span>
+                                <span className="text-yellow-500">Yağ: {log.macros?.fat}g</span>
+                              </div>
+                              <div className="w-full h-3 flex rounded-full overflow-hidden bg-gray-200 dark:bg-zinc-800">
+                                <div style={{ width: `${macros.p}%` }} className="bg-red-500 h-full transition-all duration-500"></div>
+                                <div style={{ width: `${macros.c}%` }} className="bg-blue-500 h-full transition-all duration-500"></div>
+                                <div style={{ width: `${macros.f}%` }} className="bg-yellow-500 h-full transition-all duration-500"></div>
+                              </div>
+                            </div>
+
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </>
                 )}
