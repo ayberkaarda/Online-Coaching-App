@@ -1,5 +1,4 @@
 import "@/app/globals.css";
-import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata = {
   title: "Closed-Loop Coaching Hub",
@@ -8,11 +7,9 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="tr" suppressHydrationWarning>
-      <body className="bg-slate-50 dark:bg-[#0f0f12] text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-300">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          {children}
-        </ThemeProvider>
+    <html lang="tr">
+      <body className="bg-slate-50 text-slate-900 min-h-screen">
+        {children}
       </body>
     </html>
   );

@@ -1,87 +1,94 @@
 'use client'
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { NotificationForm } from "@/components/NotificationForm";
-import { AdminUserManagement } from "@/components/AdminUserManagement";
-import { DashboardTabs } from "@/components/DashboardTabs";
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
-export default function DashboardPage() {
+export default function LoginPage() {
   const router = useRouter();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [students, setStudents] = useState([]);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMsg('');
 
-  async function checkAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      router.replace('/login');
-      return;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        setErrorMsg(error.message);
+      } else {
+        // Giriş başarılıysa ana sayfaya yönlendir
+        router.push('/');
+      }
+    } catch (err) {
+      setErrorMsg("Beklenmeyen bir hata oluştu.");
+    } finally {
+      setIsLoading(false);
     }
-    setIsAuthenticated(true);
-    setCurrentUser(session.user);
-
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-    setUserRole(profile?.role || 'student');
-
-    if (profile?.role === 'admin') {
-      const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-      setStudents(data || []);
-    }
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push('/login');
-  }
-
-  if (!isAuthenticated) return null; 
+  };
 
   return (
-    <main className="container mx-auto px-4 sm:px-6 py-12 relative max-w-6xl">
-      <button onClick={handleLogout} className="absolute top-4 left-4 p-2 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all flex items-center gap-2">
-        🚪 <span className="hidden sm:inline">Çıkış Yap</span>
-      </button>
-
-      <ThemeToggle />
-
-      <header className="text-center mb-12 space-y-2 mt-12 md:mt-0">
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-brand-purple to-purple-400">
-          Closed-Loop Coaching Hub
-        </h1>
-        <p className="text-sm md:text-base font-medium text-gray-500 dark:text-gray-400 uppercase tracking-widest">
-          {userRole === 'admin' ? 'Yönetici Paneli' : 'Öğrenci Paneli'}
-        </p>
-      </header>
-
-      {/* ROL BAZLI KONTROL (Mobilde alt alta, PC'de yan yana) */}
-      <div className={`flex flex-col lg:flex-row gap-8 items-start`}>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0f0f12] p-4">
+      <div className="w-full max-w-md bg-white dark:bg-[#16161d] p-8 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">
         
-        {/* Sol Sütun: Bildirim Gönder (Sadece Admin) */}
-        {userRole === 'admin' && (
-          <div className="w-full lg:w-1/3 space-y-6">
-            <NotificationForm students={students} />
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-purple to-purple-500 mb-2">
+            Coaching Hub
+          </h1>
+          <p className="text-sm font-medium text-gray-500 uppercase tracking-widest">
+            Sisteme Giriş Yapın
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/50 rounded-xl text-red-600 dark:text-red-400 text-sm font-bold text-center">
+            {errorMsg === 'Invalid login credentials' ? 'E-posta veya şifre hatalı!' : errorMsg}
           </div>
         )}
 
-        {/* Sağ Sütun: Sekmeler ve İçerik (Herkes görür, Admin seçer) */}
-        <div className={`w-full ${userRole === 'admin' ? 'lg:w-2/3' : 'max-w-3xl mx-auto'}`}>
-          <DashboardTabs currentUserId={currentUser?.id} userRole={userRole} students={students} />
-        </div>
-      </div>
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">E-POSTA ADRESİ</label>
+            <input 
+              type="email" 
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full p-4 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none focus:border-brand-purple transition-colors"
+              placeholder="ornek@email.com"
+            />
+          </div>
 
-      {userRole === 'admin' && (
-        <div className="mt-16 pt-8 border-t border-gray-200 dark:border-zinc-800">
-          <AdminUserManagement students={students} />
-        </div>
-      )}
-    </main>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">ŞİFRE</label>
+            <input 
+              type="password" 
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-4 rounded-xl border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm focus:outline-none focus:border-brand-purple transition-colors"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={isLoading}
+            className="w-full py-4 bg-gradient-to-r from-brand-purple to-purple-600 hover:from-purple-600 hover:to-brand-purple text-white font-black rounded-xl text-sm transition-all shadow-lg shadow-purple-500/30 disabled:opacity-50"
+          >
+            {isLoading ? 'GİRİŞ YAPILIYOR...' : 'GİRİŞ YAP'}
+          </button>
+        </form>
+
+      </div>
+    </div>
   );
 }
