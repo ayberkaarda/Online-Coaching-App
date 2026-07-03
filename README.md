@@ -29,7 +29,7 @@ Platform, yüksek performans, modern web standartları ve ölçeklenebilir altya
 * **`/src/components`**: Uygulamayı oluşturan yeniden kullanılabilir bileşenler (AdminPanel, DashboardTabs, ThemeToggle vb.).
 
 * **`/src/lib`**: Supabase gibi servislerin yapılandırma ve istemci bağlantı dosyaları.
-* 
+  
 * **`/tailwind.config.js`**: Tasarım sisteminin özelleştirildiği yapılandırma dosyası.
 ---
 
