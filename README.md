@@ -24,13 +24,13 @@ Platform, yüksek performans, modern web standartları ve ölçeklenebilir altya
 ---
 ## 📂 Dizin Yapısı ve Önemli Konumlar
 
-* /src/app: Uygulamanın yönlendirme (routing) yapısı ve temel sayfalar (login, profile, users, dashboard).
+* **`/src/app`**: Uygulamanın yönlendirme (routing) yapısı ve temel sayfalar (login, profile, users, dashboard).
 
-* /src/components: Uygulamayı oluşturan yeniden kullanılabilir bileşenler (AdminPanel, DashboardTabs, ThemeToggle vb.).
+* **`/src/components`**: Uygulamayı oluşturan yeniden kullanılabilir bileşenler (AdminPanel, DashboardTabs, ThemeToggle vb.).
 
-* /src/lib: Supabase gibi servislerin yapılandırma ve istemci bağlantı dosyaları.
-
-* /tailwind.config.js: Tasarım sisteminin özelleştirildiği yapılandırma dosyası.
+* **`/src/lib`**: Supabase gibi servislerin yapılandırma ve istemci bağlantı dosyaları.
+* 
+* **`/tailwind.config.js`**: Tasarım sisteminin özelleştirildiği yapılandırma dosyası.
 ---
 
 ## 🛠️ Kurulum & Çalıştırma (Local Development)
