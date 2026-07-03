@@ -30,3 +30,11 @@
   background: rgba(22, 22, 29, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
+/* Sadece yatay sekmelerdeki scrollbar'ı gizleyen özel sınıf */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
