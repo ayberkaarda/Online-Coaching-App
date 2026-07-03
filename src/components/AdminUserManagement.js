@@ -16,6 +16,10 @@ export function AdminUserManagement({ students }) {
   // Grafik Zaman Filtresi State'i ('week', 'month', 'all')
   const [weightChartPeriod, setWeightChartPeriod] = useState('month');
 
+  // Before / After State'leri
+  const [beforePose, setBeforePose] = useState(null);
+  const [afterPose, setAfterPose] = useState(null);
+
   useEffect(() => {
     if (!selectedStudent) return;
 
@@ -52,6 +56,17 @@ export function AdminUserManagement({ students }) {
     fetchStudentDetails();
   }, [selectedStudent]);
 
+  // Poses yüklendiğinde otomatik olarak ilk ve son fotoğrafı seç
+  useEffect(() => {
+    if (studentData.poses && studentData.poses.length > 0) {
+      setAfterPose(studentData.poses[0]); // En yeni (ilk sıradaki)
+      setBeforePose(studentData.poses[studentData.poses.length - 1]); // En eski (son sıradaki)
+    } else {
+      setAfterPose(null);
+      setBeforePose(null);
+    }
+  }, [studentData.poses]);
+
   const openDrawer = (student) => {
     setSelectedStudent(student);
     setIsDrawerOpen(true);
@@ -69,7 +84,7 @@ export function AdminUserManagement({ students }) {
     if (!studentData.poses || studentData.poses.length === 0) return [];
     
     const now = new Date();
-    let cutoffDate = new Date(0); // 'all' için varsayılan (1970)
+    let cutoffDate = new Date(0); 
 
     if (weightChartPeriod === 'week') {
       cutoffDate = new Date(now.setDate(now.getDate() - 7));
@@ -83,7 +98,7 @@ export function AdminUserManagement({ students }) {
         date: new Date(pose.created_at).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }),
         kilo: pose.current_weight
       }))
-      .reverse(); // Eskiden yeniye sırala
+      .reverse(); 
   };
 
   const activeWeightData = getFilteredWeightData();
@@ -147,34 +162,16 @@ export function AdminUserManagement({ students }) {
                 </div>
               ) : (
                 <>
-                  {/* DİNAMİK KİLO TRENDİ GRAFİĞİ */}
+                  {/* GRAFİKLER BÖLÜMÜ */}
                   <div className="bg-white dark:bg-[#16161d] p-6 rounded-3xl border border-gray-100 dark:border-zinc-800 shadow-sm">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                       <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider">Kilo Değişim Trendi</h3>
-                      
-                      {/* Zaman Filtresi Butonları */}
                       <div className="flex bg-gray-100 dark:bg-zinc-900 p-1 rounded-lg">
-                        <button 
-                          onClick={() => setWeightChartPeriod('week')}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${weightChartPeriod === 'week' ? 'bg-white dark:bg-zinc-700 text-brand-purple shadow-sm' : 'text-gray-500'}`}
-                        >
-                          1 Hafta
-                        </button>
-                        <button 
-                          onClick={() => setWeightChartPeriod('month')}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${weightChartPeriod === 'month' ? 'bg-white dark:bg-zinc-700 text-brand-purple shadow-sm' : 'text-gray-500'}`}
-                        >
-                          1 Ay
-                        </button>
-                        <button 
-                          onClick={() => setWeightChartPeriod('all')}
-                          className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${weightChartPeriod === 'all' ? 'bg-white dark:bg-zinc-700 text-brand-purple shadow-sm' : 'text-gray-500'}`}
-                        >
-                          Tümü
-                        </button>
+                        <button onClick={() => setWeightChartPeriod('week')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${weightChartPeriod === 'week' ? 'bg-white dark:bg-zinc-700 text-brand-purple shadow-sm' : 'text-gray-500'}`}>1 Hafta</button>
+                        <button onClick={() => setWeightChartPeriod('month')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${weightChartPeriod === 'month' ? 'bg-white dark:bg-zinc-700 text-brand-purple shadow-sm' : 'text-gray-500'}`}>1 Ay</button>
+                        <button onClick={() => setWeightChartPeriod('all')} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${weightChartPeriod === 'all' ? 'bg-white dark:bg-zinc-700 text-brand-purple shadow-sm' : 'text-gray-500'}`}>Tümü</button>
                       </div>
                     </div>
-
                     <div className="h-64 w-full">
                       {activeWeightData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
@@ -187,14 +184,11 @@ export function AdminUserManagement({ students }) {
                           </LineChart>
                         </ResponsiveContainer>
                       ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-gray-500 bg-gray-50 dark:bg-zinc-900/50 rounded-xl">
-                          Bu tarih aralığında form verisi bulunamadı.
-                        </div>
+                        <div className="flex h-full items-center justify-center text-sm text-gray-500 bg-gray-50 dark:bg-zinc-900/50 rounded-xl">Bu tarih aralığında form verisi bulunamadı.</div>
                       )}
                     </div>
                   </div>
 
-                  {/* MAKRO ALIMI GRAFİĞİ */}
                   <div className="bg-white dark:bg-[#16161d] p-6 rounded-3xl border border-gray-100 dark:border-zinc-800 shadow-sm">
                     <h3 className="font-bold text-sm text-gray-500 mb-4 uppercase tracking-wider">Son 14 Günlük Makro Alımı</h3>
                     <div className="h-72 w-full">
@@ -216,6 +210,73 @@ export function AdminUserManagement({ students }) {
                       )}
                     </div>
                   </div>
+
+                  {/* YENİ: BEFORE / AFTER MODÜLÜ */}
+                  {studentData.poses.length > 0 && (
+                    <div className="bg-white dark:bg-[#16161d] p-6 rounded-3xl border border-gray-100 dark:border-zinc-800 shadow-sm">
+                      <h3 className="font-bold text-sm text-gray-500 mb-4 uppercase tracking-wider">Gelişim Kıyaslama (Before / After)</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* BEFORE */}
+                        <div className="space-y-3">
+                          <select 
+                            value={beforePose?.id || ''} 
+                            onChange={(e) => setBeforePose(studentData.poses.find(p => p.id === e.target.value))}
+                            className="w-full p-3 rounded-xl border dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 text-sm font-bold focus:outline-none focus:border-brand-purple"
+                          >
+                            {studentData.poses.map(pose => (
+                              <option key={`before-${pose.id}`} value={pose.id}>
+                                {new Date(pose.created_at).toLocaleDateString('tr-TR')} ({pose.current_weight} kg)
+                              </option>
+                            ))}
+                          </select>
+                          {beforePose && (
+                            <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden border-2 border-gray-200 dark:border-zinc-800">
+                              <img src={beforePose.front_pose_url} alt="Before" className="object-cover w-full h-full" />
+                              <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-4">
+                                <span className="bg-zinc-800 text-white text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Before</span>
+                                <p className="text-white font-bold mt-1">{beforePose.current_weight} kg</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* AFTER */}
+                        <div className="space-y-3">
+                          <select 
+                            value={afterPose?.id || ''} 
+                            onChange={(e) => setAfterPose(studentData.poses.find(p => p.id === e.target.value))}
+                            className="w-full p-3 rounded-xl border border-brand-purple bg-brand-purple/5 dark:bg-brand-purple/10 text-brand-purple text-sm font-bold focus:outline-none"
+                          >
+                            {studentData.poses.map(pose => (
+                              <option key={`after-${pose.id}`} value={pose.id}>
+                                {new Date(pose.created_at).toLocaleDateString('tr-TR')} ({pose.current_weight} kg)
+                              </option>
+                            ))}
+                          </select>
+                          {afterPose && (
+                            <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden border-2 border-brand-purple">
+                              <img src={afterPose.front_pose_url} alt="After" className="object-cover w-full h-full" />
+                              <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-brand-purple/90 to-transparent p-4">
+                                <span className="bg-white text-brand-purple text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">After</span>
+                                <p className="text-white font-bold mt-1">{afterPose.current_weight} kg</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Kilo Farkı Özeti */}
+                      {beforePose && afterPose && (
+                        <div className="mt-6 p-4 bg-gray-50 dark:bg-zinc-900 rounded-xl flex justify-between items-center border border-gray-100 dark:border-zinc-800">
+                          <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">Net Değişim</span>
+                          <span className={`text-xl font-black ${afterPose.current_weight > beforePose.current_weight ? 'text-emerald-500' : afterPose.current_weight < beforePose.current_weight ? 'text-brand-purple' : 'text-gray-500'}`}>
+                            {afterPose.current_weight > beforePose.current_weight ? '+' : ''}{(afterPose.current_weight - beforePose.current_weight).toFixed(1)} kg
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* PROGRAM YAZMA MERKEZİ */}
                   <div className="grid grid-cols-1 gap-6 pt-6 border-t dark:border-zinc-800">
