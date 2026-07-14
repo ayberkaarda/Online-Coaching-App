@@ -15,7 +15,7 @@ Platform, yüksek performans, modern web standartları ve ölçeklenebilir altya
 ### 🌓 Dark Mode ve Light Mode
 | Dark Mode | Light Mode |
 |:-------------------------:|:------------------------:|
-| <img src="./screenshots/darkmode.jpeg" width="100%" alt="dark mode"> | <img src="./lightmode.jpeg" width="100%" alt="light mode"> |
+| <img src="./screenshots/darkmode.jpeg" width="100%" alt="dark mode"> | <img src="./screenshots/lightmode.jpeg" width="100%" alt="light mode"> |
 
 ## ✨ Öne Çıkan Özellikler
 
