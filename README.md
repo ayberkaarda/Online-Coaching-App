@@ -12,6 +12,11 @@ Platform, yüksek performans, modern web standartları ve ölçeklenebilir altya
 ![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
 
+### 🌓 Dark Mode ve Light Mode
+| Dark Mode | Light Mode |
+|:-------------------------:|:------------------------:|
+| <img src="./screenshots/darkmode.jpeg" width="100%" alt="dark mode"> | <img src="./lightmode.jpeg" width="100%" alt="light mode"> |
+
 ## ✨ Öne Çıkan Özellikler
 
 * **Kullanıcı ve Rol Yönetimi:** Admin panelleri üzerinden kullanıcı ve yetki yönetimi; AdminUserManagement.js ile merkezi kontrol.
